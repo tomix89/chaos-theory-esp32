@@ -43,7 +43,9 @@ struct Pt2d {
   }
 };
 
-uint16_t oneLineBuff[240];
+const uint16_t LCD_COL_PIX_CNT = 240;
+const uint16_t LCD_BUFF_LINES = 64;
+uint16_t oneLineBuff[LCD_BUFF_LINES][LCD_COL_PIX_CNT];
 char sprintfBuff[128];
 
 class Trail {
@@ -81,23 +83,21 @@ public:
   }
 
   // returns true if there is
-  void loadPixelsToBuff(uint16_t* LCD_line, uint16_t col) {
+  void loadPixelsToBuff(uint16_t (&LCD_line)[LCD_BUFF_LINES][LCD_COL_PIX_CNT], uint16_t col) {
     // each time we need to go through the whole trail
     for (int i = 0; i < LEN; ++i) {
       // if we have a pixel in our trace for this col, add it
-      if (trail[i].x == col) {
+      if ((trail[i].x >= col) && (trail[i].x < col + LCD_BUFF_LINES)) {
         // add with shaded color represented by the trace age
         // we have to consider the current pointer's pos as the freshest
         // freshest = 0, oldest = LEN
-        uint16_t age = (ptr - i) & (LEN - 1);
-
+        uint16_t age = (ptr - i - 1) & (LEN - 1);
 
         // sprintf(sprintfBuff, "loadPixelsToBuff() i: %d ptr: %d age: %d col: %d y: %d", i, ptr, age, col, trail[i].y);
         // Serial.println(sprintfBuff);
 
-
         // make colors additive
-        LCD_line[trail[i].y] |= getLCDcolorForId(age, color);
+        LCD_line[trail[i].x - col][trail[i].y] |= getLCDcolorForId(age, color);
       }
     }
   }
@@ -117,8 +117,6 @@ private:
 
   uint16_t getLCDcolorForId(uint16_t age, AttractorColor color) {
     uint32_t retVal;  // we need it because of the multiplication
-
-    age -= 1;  // to match the zero based indexing
 
     switch (color) {
       // 5 bit clr
@@ -285,7 +283,7 @@ void updateScreen() {
 
   tft.startWrite();
   // write col by col
-  for (int col = 0; col < 320; ++col) {
+  for (int col = 0; col < 320; col += LCD_BUFF_LINES) {
 
     unsigned long start = micros();
     memset(oneLineBuff, 0x00, sizeof(oneLineBuff));
@@ -297,7 +295,9 @@ void updateScreen() {
     sumLCDLinestime += end - start;
 
     start = micros();
-    tft.writePixels(&oneLineBuff[0], 240);
+    // does not need a for cycle as data are correctly arranged
+    // we can print the whole array in one go
+    tft.writePixels(&oneLineBuff[0][0], LCD_BUFF_LINES * LCD_COL_PIX_CNT);
     end = micros();
     sumLCDDrawtime += end - start;
   }
