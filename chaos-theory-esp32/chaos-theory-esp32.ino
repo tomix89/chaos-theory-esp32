@@ -1,6 +1,7 @@
 #include "SPI.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_ILI9341.h"
+#include "Trail.hpp"
 
 const int TFT_CS = 15;
 const int TFT_DC = 4;
@@ -13,127 +14,18 @@ const int TFT_DC = 4;
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 #define LDC_SPI_FREQ 40000000L  // 40MHz
 
-enum AttractorColor {
-  CLR_UNKNOWN,
-  CLR_RED,
-  CLR_GREEN,
-  CLR_BLUE
-};
-
 struct Pt3d {
   float x;
   float y;
   float z;
 };
 
-struct Pt2d {
-  uint16_t x;
-  uint16_t y;
 
-  bool operator==(const Pt2d& other) {
-    return (x == other.x) && (y == other.y);
-  }
-
-  bool operator!=(const Pt2d& other) {
-    return !(*this == other);
-  }
-};
-
-const uint16_t LCD_COL_PIX_CNT = 240;
-const uint16_t LCD_BUFF_LINES = 64;
 uint16_t oneLineBuff[LCD_BUFF_LINES][LCD_COL_PIX_CNT];
-
-class Trail {
-public:
-
-  Trail() {
-    for (int i = 0; i < LEN; ++i) {
-      trail[i] = { -1, -1 };
-    }
-  }
-
-  void setColor(AttractorColor color) {
-    (*this).color = color;
-  }
-
-  void addPoint(Pt2d pt2d) {
-    // do not filter out duplicates - makes the head and tail move speed independent
-    // because results in a lot of duplicates, but are time exact.
-    // also makes the trail a lot shorter so it needs tweaking of LEN
-
-    // update only if the last has changed or have rechaed the timeout for same
-    if ((lastPt != pt2d) || (lastPtRpt >= POINT_REPEAT_LIMIT)) {
-      lastPt = pt2d;
-      lastPtRpt = 0;
-
-      trail[ptr] = pt2d;
-      ptr = (ptr + 1) & (LEN - 1);
-    } else {
-      lastPtRpt++;
-    }
-  }
-
-  // returns true if there is
-  void loadPixelsToBuff(uint16_t (&LCD_line)[LCD_BUFF_LINES][LCD_COL_PIX_CNT], uint16_t col) {
-    // each time we need to go through the whole trail
-    for (int i = 0; i < LEN; ++i) {
-      // if we have a pixel in our trace for this col, add it
-      if ((trail[i].x >= col) && (trail[i].x < col + LCD_BUFF_LINES)) {
-        // add with shaded color represented by the trace age
-        // we have to consider the current pointer's pos as the freshest
-        // freshest = 0, oldest = LEN
-        uint16_t age = (ptr - i - 1) & (LEN - 1);
-
-        // make colors additive
-        LCD_line[trail[i].x - col][trail[i].y] |= getLCDcolorForId(age, color);
-      }
-    }
-  }
-
-private:
-  static const int LEN_BITS = 11;
-  static const int LEN = pow(2, LEN_BITS);
-  Pt2d trail[LEN];
-  Pt2d lastPt{ -1, -1 };
-  // make it -1 then the tail and head will have it's own independent 'real' speed, but the line will be a lot shorter
-  // making it 1,2,3 makes the tail move less and less 'real', e.g. more dependent on the head's spead
-  // making it bigger than 1024 is basically making the tail speed dependent almost entirely on the head speed - e.g. each point is unique - max visible length
-  const int16_t POINT_REPEAT_LIMIT = -1;
-  int lastPtRpt = 0;
-  uint16_t ptr = 0;
-  AttractorColor color;
-
-  uint16_t getLCDcolorForId(uint16_t age, AttractorColor color) {
-    uint32_t retVal;  // we need it because of the multiplication
-
-    switch (color) {
-      // 5 bit clr
-      case CLR_RED:
-        retVal = 0x1F * (LEN - age) / LEN;
-        retVal = (retVal << 11) & ILI9341_RED;  // shift it to RED position of the 565 color
-        //retVal = ILI9341_RED;
-        break;
-
-      case CLR_GREEN:
-        retVal = 0x3F * (LEN - age) / LEN;
-        retVal = (retVal << 5) & ILI9341_GREEN;  // shift it to GREEN position of the 565 color
-        //retVal = ILI9341_GREEN;
-        break;
-
-      case CLR_BLUE:
-        retVal = 0x1F * (LEN - age) / LEN;
-        retVal &= ILI9341_BLUE;  // BLUE does not need a shift in the 565 color
-        //retVal = ILI9341_BLUE;
-        break;
-    }
-
-    return (uint16_t)retVal;
-  }
-};
 
 struct Attractor {
 
-  Attractor(AttractorColor color) {
+  Attractor(Trail::AttractorColor color) {
     trail.setColor(color);
   }
 
@@ -142,9 +34,9 @@ struct Attractor {
   Pt2d lastClearedPix;
 };
 
-Attractor attractor_red(CLR_RED);
-Attractor attractor_green(CLR_GREEN);
-Attractor attractor_blue(CLR_BLUE);
+Attractor attractor_red(Trail::CLR_RED);
+Attractor attractor_green(Trail::CLR_GREEN);
+Attractor attractor_blue(Trail::CLR_BLUE);
 
 const float SPEED = 0.05f;  // determines the speed of the simulation
 const float ZOOM = 5.2f;
@@ -250,9 +142,7 @@ void updatePosition(float dt, Attractor* attractor) {
   attractor->trail.addPoint(currPix);
 }
 
-
 void updateScreen() {
-
   tft.startWrite();
   // write col by col
   for (int col = 0; col < 320; col += LCD_BUFF_LINES) {
