@@ -13,10 +13,6 @@ const int TFT_DC = 4;
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 #define LDC_SPI_FREQ 40000000L  // 40MHz
 
-unsigned long sumLCDDrawtime = 0;
-unsigned long sumUpdatetime = 0;
-unsigned long sumLCDLinestime = 0;
-
 enum AttractorColor {
   CLR_UNKNOWN,
   CLR_RED,
@@ -46,10 +42,8 @@ struct Pt2d {
 const uint16_t LCD_COL_PIX_CNT = 240;
 const uint16_t LCD_BUFF_LINES = 64;
 uint16_t oneLineBuff[LCD_BUFF_LINES][LCD_COL_PIX_CNT];
-char sprintfBuff[128];
 
 class Trail {
-
 public:
 
   Trail() {
@@ -72,9 +66,6 @@ public:
       lastPt = pt2d;
       lastPtRpt = 0;
 
-      // sprintf(sprintfBuff, "addPoint() ptr: %d x: %d y: %d", ptr, pt2d.x, pt2d.y);
-      // Serial.println(sprintfBuff);
-
       trail[ptr] = pt2d;
       ptr = (ptr + 1) & (LEN - 1);
     } else {
@@ -92,9 +83,6 @@ public:
         // we have to consider the current pointer's pos as the freshest
         // freshest = 0, oldest = LEN
         uint16_t age = (ptr - i - 1) & (LEN - 1);
-
-        // sprintf(sprintfBuff, "loadPixelsToBuff() i: %d ptr: %d age: %d col: %d y: %d", i, ptr, age, col, trail[i].y);
-        // Serial.println(sprintfBuff);
 
         // make colors additive
         LCD_line[trail[i].x - col][trail[i].y] |= getLCDcolorForId(age, color);
@@ -205,17 +193,6 @@ void setup() {
   randomInitStartPos(&attractor_red.currPos);
   randomInitStartPos(&attractor_green.currPos);
   randomInitStartPos(&attractor_blue.currPos);
-
-  /*
-  sprintf(sprintfBuff, "pos red x: %f y: %f z: %f", currPos_red.x, currPos_red.y, currPos_red.z);
-  Serial.println(sprintfBuff);
-
-  sprintf(sprintfBuff, "pos grn x: %f y: %f z: %f", currPos_green.x, currPos_green.y, currPos_green.z);
-  Serial.println(sprintfBuff);
-
-  sprintf(sprintfBuff, "pos blu x: %f y: %f z: %f", currPos_blue.x, currPos_blue.y, currPos_blue.z);
-  Serial.println(sprintfBuff);
-  */
 }
 
 
@@ -253,12 +230,7 @@ void updatePosition(float dt, Attractor* attractor) {
 
   // has to take in account the LCD draw ZOOM
   if (step * ZOOM > MAX_STEP_PX) {
-
     // make this step in 2 halves
-    // sprintf(sprintfBuff, "step: %f dt: %f", step, 2 * SPEED / dt);
-    // Serial.println(sprintfBuff);
-
-    // Serial.println("---SPLIT");
     updatePosition(dt / 2.0f, attractor);
     updatePosition(dt / 2.0f, attractor);
 
@@ -285,46 +257,23 @@ void updateScreen() {
   // write col by col
   for (int col = 0; col < 320; col += LCD_BUFF_LINES) {
 
-    unsigned long start = micros();
     memset(oneLineBuff, 0x00, sizeof(oneLineBuff));
-
     attractor_red.trail.loadPixelsToBuff(oneLineBuff, col);
     attractor_green.trail.loadPixelsToBuff(oneLineBuff, col);
     attractor_blue.trail.loadPixelsToBuff(oneLineBuff, col);
-    unsigned long end = micros();
-    sumLCDLinestime += end - start;
 
-    start = micros();
     // does not need a for cycle as data are correctly arranged
     // we can print the whole array in one go
     tft.writePixels(&oneLineBuff[0][0], LCD_BUFF_LINES * LCD_COL_PIX_CNT);
-    end = micros();
-    sumLCDDrawtime += end - start;
   }
 
   tft.endWrite();
 }
 
-int cntr = 0;
-int itr = 0;
-
 void loop() {
-
-  unsigned long start = micros();
   updatePosition(SPEED, &attractor_red);
   updatePosition(SPEED, &attractor_green);
   updatePosition(SPEED, &attractor_blue);
-  unsigned long end = micros();
-  sumUpdatetime += end - start;
-
 
   updateScreen();
-
-  cntr++;
-  if (cntr > 25) {
-    cntr = 0;
-    itr++;
-    sprintf(sprintfBuff, "-------[%d]\nsumUpdatetime: %f\nsumLCDDrawtime: %f\nsumLCDLinestime: %f", itr, sumUpdatetime / 1000.0f, sumLCDDrawtime / 1000.0f, sumLCDLinestime / 1000.0f);
-    Serial.println(sprintfBuff);
-  }
 }
